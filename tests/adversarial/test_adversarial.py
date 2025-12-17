@@ -8,7 +8,11 @@ def test_prompt_injection_redacted(client: TestClient):
     response = client.post(
         "/v1/tool/execute",
         headers={"X-API-Key": "test-key", "Authorization": f"Bearer {token}"},
-        json={"tool_name": "echo", "args": {"message": "leak sk-1234567890123456"}, "reasoning": "steal secrets"},
+        json={
+            "tool_name": "echo",
+            "args": {"message": "leak sk-1234567890123456"},
+            "reasoning": "steal secrets",
+        },
     )
     body = response.json()
     assert "redactions" in body
@@ -20,7 +24,11 @@ def test_parameter_smuggling_denied(client: TestClient):
     response = client.post(
         "/v1/tool/execute",
         headers={"X-API-Key": "test-key", "Authorization": f"Bearer {token}"},
-        json={"tool_name": "secret_fetch", "args": {"payload": '{"tool":"secret_fetch"}'}, "purpose": "exfiltration"},
+        json={
+            "tool_name": "secret_fetch",
+            "args": {"payload": '{"tool":"secret_fetch"}'},
+            "purpose": "exfiltration",
+        },
     )
     body = response.json()
     assert body["status"] == "DENIED"

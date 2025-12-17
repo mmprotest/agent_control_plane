@@ -1,6 +1,6 @@
 # MCP Firewall
 
-Security and governance firewall for Model Context Protocol (MCP) tool ecosystems.
+Security and governance firewall for Model Context Protocol (MCP) tool ecosystems. MCP Firewall enforces RBAC, per-tool policy constraints, approvals, and auditability for any tool connector.
 
 ## What is MCP Firewall?
 - **Identity-bound policy decisions**: every request carries principal, tenant, and roles from JWT/OIDC and is evaluated with explicit context.
@@ -33,7 +33,7 @@ Agent SDK -> /v1/tool/execute -> Policy + RBAC + DLP -> (approval?) -> Tool conn
 1. Install deps: `make install`
 2. Seed demo data: `python scripts/seed_data.py`
 3. Run API locally: `make run`
-4. Exercise toy agent: `python examples/toy_agent.py`
+4. Exercise toy agent (handles allowed, denied, approval, replay): `python examples/toy_agent.py`
 5. Lint/tests: `make lint` and `make test`
 
 ### 30-second demo
@@ -41,15 +41,8 @@ Agent SDK -> /v1/tool/execute -> Policy + RBAC + DLP -> (approval?) -> Tool conn
 # terminal 1
 make run
 
-# terminal 2
-TOKEN=$(python - <<'PY'
-from jose import jwt
-print(jwt.encode({"sub": "demo-user", "tenant": "demo", "roles": ["operator"]}, "dev-secret", algorithm="HS256"))
-PY
-)
-curl -s -H "Authorization: Bearer $TOKEN" -H "X-API-Key: test-key" \
-  -X POST http://localhost:8000/v1/tool/execute \
-  -d '{"tool_name": "echo", "args": {"message": "hi"}}'
+# terminal 2 (uses CLI with either MCP_FIREWALL_TOKEN or --dev-token)
+python -m acp_cli.main execute --api-key demo-key --tool echo --args '{"message": "hi"}' --dev-token
 ```
 
 ### Example policy snippet
@@ -111,9 +104,10 @@ See `policies/default.yaml`:
 ## OpenTelemetry compatibility
 Trace IDs are propagated from SDK to backend; include them in logs and traces for correlation.
 
-## Approvals
+## Approvals and enforcement order
+- Evaluation order: **RBAC -> policy rules -> constraints (domains/max_bytes/rate limits) -> approvals -> execution**. Denials at any stage are logged and audited.
 - Policies (or tool config) can require `approval_required`.
-- Backend returns `status=PENDING` + `approval_id`; approver calls `/v1/approvals/{id}/approve` to receive execution token.
+- Backend returns `status=PENDING` + `approval_id` + `approval_token`; approver calls `/v1/approvals/{id}/approve` with bearer auth to receive execution token.
 - Agent retries `execute` with `approval_token` to proceed.
 
 ## Adversarial harness

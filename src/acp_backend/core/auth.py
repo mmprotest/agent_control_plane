@@ -49,7 +49,9 @@ def _cache_jwks(jwks_url: str, jwks: Dict[str, Any], ttl_seconds: int) -> None:
     _JWKS_CACHE[jwks_url] = (time.time() + ttl_seconds, jwks)
 
 
-def _verify_with_jwks(token: str, jwks: Dict[str, Any], audience: Optional[str], issuer: Optional[str]) -> Dict[str, Any]:
+def _verify_with_jwks(
+    token: str, jwks: Dict[str, Any], audience: Optional[str], issuer: Optional[str]
+) -> Dict[str, Any]:
     headers = jwt.get_unverified_header(token)
     kid = headers.get("kid")
     if not kid:
@@ -82,7 +84,9 @@ def _verify_with_jwks(token: str, jwks: Dict[str, Any], audience: Optional[str],
     return claims
 
 
-def _verify_hs256(token: str, secret: str, audience: Optional[str], issuer: Optional[str]) -> Dict[str, Any]:
+def _verify_hs256(
+    token: str, secret: str, audience: Optional[str], issuer: Optional[str]
+) -> Dict[str, Any]:
     try:
         return jwt.decode(
             token,
@@ -117,7 +121,9 @@ async def require_auth(
             _cache_jwks(settings.oidc_jwks_url, jwks, settings.jwks_cache_ttl_seconds)
         claims = _verify_with_jwks(token, jwks, settings.jwt_audience, settings.jwt_issuer)
     else:
-        claims = _verify_hs256(token, settings.jwt_secret, settings.jwt_audience, settings.jwt_issuer)
+        claims = _verify_hs256(
+            token, settings.jwt_secret, settings.jwt_audience, settings.jwt_issuer
+        )
 
     principal_id = claims.get("sub") or claims.get("principal_id")
     tenant_id = claims.get("tenant") or claims.get("tenant_id")

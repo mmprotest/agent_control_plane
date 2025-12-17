@@ -4,6 +4,7 @@ import datetime as dt
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, JSON
+from sqlalchemy.ext.mutable import MutableList
 from sqlmodel import Field
 
 from acp_backend.models.base import SQLModelBase
@@ -12,7 +13,9 @@ from acp_backend.models.base import SQLModelBase
 class Role(SQLModelBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
-    permissions: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    permissions: List[str] = Field(
+        default_factory=list, sa_column=Column(MutableList.as_mutable(JSON))
+    )
 
 
 class Agent(SQLModelBase, table=True):
@@ -35,7 +38,12 @@ class Tool(SQLModelBase, table=True):
     type: str  # http or internal
     endpoint: Optional[str] = None
     requires_approval: bool = Field(default=False)
-    allowed_domains: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    allowed_domains: List[str] = Field(
+        default_factory=list, sa_column=Column(MutableList.as_mutable(JSON))
+    )
+    denied_domains: List[str] = Field(
+        default_factory=list, sa_column=Column(MutableList.as_mutable(JSON))
+    )
 
 
 class ApprovalRequest(SQLModelBase, table=True):

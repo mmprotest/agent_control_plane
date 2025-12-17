@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 
 class Settings(BaseModel):
     app_env: str = Field(default=os.getenv("APP_ENV", "development"))
-    database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./dev.db"))
+    database_url: str = Field(
+        default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./dev.db")
+    )
     api_prefix: str = "/v1"
     jwt_secret: str = Field(default=os.getenv("JWT_SECRET", "dev-secret"))
     jwt_algorithm: str = Field(default=os.getenv("JWT_ALGORITHM", "HS256"))

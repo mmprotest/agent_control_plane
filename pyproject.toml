@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-control-plane"
+name = "mcp-firewall"
 version = "0.1.0"
-description = "Runtime control plane for LLM tool use"
+description = "MCP Firewall: policy and RBAC gateway for tool execution"
 authors = [{name = "OpenAI Agent"}]
 license = {text = "MIT"}
 readme = "README.md"
