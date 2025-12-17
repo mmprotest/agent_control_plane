@@ -1,3 +1,0 @@
-acp_backend
-acp_cli
-acp_sdk

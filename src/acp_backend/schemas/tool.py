@@ -20,6 +20,7 @@ class ToolExecutionResponse(BaseModel):
     status: str
     output: Optional[Dict[str, Any]] = None
     approval_id: Optional[str] = None
+    approval_token: Optional[str] = None
     redactions: Optional[Dict[str, Any]] = None
     trace_id: Optional[str] = None
     message: Optional[str] = None

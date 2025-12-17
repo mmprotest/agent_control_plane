@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import time
+import copy
+import time
 from typing import Iterator
 
 import pytest
@@ -9,6 +11,7 @@ from jose import jwt
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from acp_backend.api import main
 from acp_backend.api.main import app, get_db_session
 from acp_backend.core.config import get_settings
 from acp_backend.core.security import hash_secret
@@ -67,3 +70,14 @@ def client(session: Session) -> TestClient:
 
     app.dependency_overrides[get_db_session] = _get_session
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_policy_and_rate_limits():
+    original_rules = copy.deepcopy(main.policy_engine.rules)
+    original_rate_limiter = main.rate_limiter
+    main.rate_limiter.requests.clear()
+    yield
+    main.policy_engine.rules = original_rules
+    main.rate_limiter = original_rate_limiter
+    main.rate_limiter.requests.clear()
