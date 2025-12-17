@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from sqlmodel import Session, select
 
+from acp_backend.core.auth import AuthContext, require_auth
 from acp_backend.core.config import get_settings
 from acp_backend.core.logging import setup_logging
 from acp_backend.core.security import verify_secret
@@ -23,7 +24,7 @@ from acp_backend.tooling.internal_tools import InternalToolRegistry
 
 settings = get_settings()
 setup_logging()
-app = FastAPI(title="Agent Control Plane", version="0.1.0")
+app = FastAPI(title="MCP Firewall", version="0.2.0")
 policy_engine = PolicyEngine()
 rate_limiter = RateLimiter()
 internal_tools = InternalToolRegistry()
@@ -61,6 +62,7 @@ def authenticate_user(session: Session, token: Optional[str]) -> Optional[User]:
 @app.post(f"{settings.api_prefix}/tool/execute", response_model=ToolExecutionResponse)
 async def execute_tool(
     request: ToolExecutionRequest,
+    auth_context: AuthContext = Depends(require_auth),
     api_key: str = Header(..., alias="X-API-Key"),
     user_token: Optional[str] = Header(default=None, alias="X-User-Token"),
     session: Session = Depends(get_db_session),
@@ -93,6 +95,7 @@ async def execute_tool(
         trace = Trace(
             trace_id=trace_id,
             agent_id=agent.id,
+            tenant_id=auth_context.tenant_id,
             user_id=user_id,
             tool_name=request.tool_name,
             request_payload=request.model_dump(),
@@ -108,6 +111,8 @@ async def execute_tool(
             session,
             {
                 "action": "tool_denied",
+                "tenant_id": auth_context.tenant_id,
+                "principal_id": auth_context.principal_id,
                 "agent_id": agent.id,
                 "user_id": user_id,
                 "tool_name": request.tool_name,
@@ -131,6 +136,7 @@ async def execute_tool(
             approval = ApprovalRequest(
                 approval_id=generate_trace_id(),
                 agent_id=agent.id,
+                tenant_id=auth_context.tenant_id,
                 user_id=user_id,
                 tool_name=request.tool_name,
                 status="PENDING",
@@ -143,6 +149,8 @@ async def execute_tool(
                 session,
                 {
                     "action": "approval_created",
+                    "tenant_id": auth_context.tenant_id,
+                    "principal_id": auth_context.principal_id,
                     "agent_id": agent.id,
                     "user_id": user_id,
                     "tool_name": request.tool_name,
@@ -173,6 +181,7 @@ async def execute_tool(
     trace = Trace(
         trace_id=trace_id,
         agent_id=agent.id,
+        tenant_id=auth_context.tenant_id,
         user_id=user_id,
         tool_name=request.tool_name,
         request_payload=request.model_dump(),
@@ -193,6 +202,8 @@ async def execute_tool(
         session,
         {
             "action": "tool_executed",
+            "tenant_id": auth_context.tenant_id,
+            "principal_id": auth_context.principal_id,
             "agent_id": agent.id,
             "user_id": user_id,
             "tool_name": request.tool_name,
@@ -210,6 +221,7 @@ async def approve_request(
     token: str,
     approver: str,
     session: Session = Depends(get_db_session),
+    auth_context: AuthContext = Depends(require_auth),
 ) -> Dict[str, str]:
     approval = session.exec(select(ApprovalRequest).where(ApprovalRequest.approval_id == approval_id)).first()
     if not approval:
@@ -224,6 +236,8 @@ async def approve_request(
         session,
         {
             "action": "approval_completed",
+            "tenant_id": auth_context.tenant_id,
+            "principal_id": auth_context.principal_id,
             "agent_id": approval.agent_id,
             "user_id": approval.user_id,
             "tool_name": approval.tool_name,
@@ -236,7 +250,12 @@ async def approve_request(
 
 
 @app.get(f"{settings.api_prefix}/traces/{{trace_id}}/replay", response_model=TraceReplayResponse)
-async def replay_trace(trace_id: str, dry_run: bool = False, session: Session = Depends(get_db_session)) -> TraceReplayResponse:
+async def replay_trace(
+    trace_id: str,
+    dry_run: bool = False,
+    session: Session = Depends(get_db_session),
+    auth_context: AuthContext = Depends(require_auth),
+) -> TraceReplayResponse:
     trace = session.get(Trace, trace_id)
     if not trace:
         raise HTTPException(status_code=404, detail="trace_not_found")

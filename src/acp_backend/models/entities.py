@@ -41,6 +41,7 @@ class Tool(SQLModelBase, table=True):
 class ApprovalRequest(SQLModelBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     approval_id: str = Field(index=True)
+    tenant_id: Optional[str] = Field(default=None, index=True)
     agent_id: Optional[int] = Field(default=None, foreign_key="agent.id")
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     tool_name: str
@@ -54,6 +55,8 @@ class AuditLogEntry(SQLModelBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: dt.datetime = Field(default_factory=dt.datetime.utcnow, index=True)
     action: str
+    tenant_id: Optional[str] = Field(default=None, index=True)
+    principal_id: Optional[str] = Field(default=None, index=True)
     agent_id: Optional[int] = None
     user_id: Optional[int] = None
     tool_name: Optional[str] = None
@@ -67,6 +70,7 @@ class AuditLogEntry(SQLModelBase, table=True):
 class Trace(SQLModelBase, table=True):
     trace_id: str = Field(primary_key=True)
     created_at: dt.datetime = Field(default_factory=dt.datetime.utcnow, index=True)
+    tenant_id: Optional[str] = Field(default=None, index=True)
     agent_id: Optional[int] = None
     user_id: Optional[int] = None
     tool_name: str

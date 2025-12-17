@@ -1,6 +1,11 @@
-# Agent Control Plane
+# MCP Firewall
 
-Runtime control plane enforcing policy, RBAC, DLP, and tamper-evident audit for LLM tool use.
+Security and governance firewall for Model Context Protocol (MCP) tool ecosystems.
+
+## What is MCP Firewall?
+- **Identity-bound policy decisions**: every request carries principal, tenant, and roles from JWT/OIDC and is evaluated with explicit context.
+- **Tamper-evident audit chain + verification CLI**: audit entries are hash-chained for forensics-ready evidence.
+- **Adversarial harness with artifacts (proof-driven)**: tests assert denials/redactions and produce artifacts for validation.
 
 ## Repository structure
 - `src/acp_backend`: FastAPI service, policy engine, DLP, audit hashing
@@ -31,6 +36,35 @@ Agent SDK -> /v1/tool/execute -> Policy + RBAC + DLP -> (approval?) -> Tool conn
 4. Exercise toy agent: `python examples/toy_agent.py`
 5. Lint/tests: `make lint` and `make test`
 
+### 30-second demo
+```bash
+# terminal 1
+make run
+
+# terminal 2
+TOKEN=$(python - <<'PY'
+from jose import jwt
+print(jwt.encode({"sub": "demo-user", "tenant": "demo", "roles": ["operator"]}, "dev-secret", algorithm="HS256"))
+PY
+)
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-API-Key: test-key" \
+  -X POST http://localhost:8000/v1/tool/execute \
+  -d '{"tool_name": "echo", "args": {"message": "hi"}}'
+```
+
+### Example policy snippet
+```yaml
+- tool: echo
+  role: operator
+  decision: allow
+- tool: secret_fetch
+  purpose: exfiltration
+  decision: deny
+- tool: sum_numbers
+  role: operator
+  decision: approval_required
+```
+
 ## Docker Compose
 ```
 docker compose up --build
@@ -59,6 +93,11 @@ See `policies/default.yaml`:
 - **Data exfiltration**: allowlist domains + deny rules; approvals gate sensitive tools.
 - **Tampering**: audit log hash chain detects removal/modification.
 - **Replay**: traces contain canonicalized request/response/policy for deterministic inspection.
+
+## Security Claims
+- JWT/OIDC authentication enforced on every `/v1/*` endpoint with explicit principal/tenant binding.
+- Audit entries and traces carry tenant + principal context and are hash chained for tamper evidence.
+- DLP redacts secrets by default before persistence, validated via adversarial tests.
 
 ## How replay works
 - Every tool request persists raw + redacted payloads and policy decision.

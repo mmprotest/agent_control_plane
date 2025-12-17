@@ -11,6 +11,11 @@ class Settings(BaseModel):
     app_env: str = Field(default=os.getenv("APP_ENV", "development"))
     database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./dev.db"))
     api_prefix: str = "/v1"
+    jwt_secret: str = Field(default=os.getenv("JWT_SECRET", "dev-secret"))
+    jwt_algorithm: str = Field(default=os.getenv("JWT_ALGORITHM", "HS256"))
+    oidc_jwks_url: Optional[str] = Field(default=os.getenv("OIDC_JWKS_URL"))
+    jwt_audience: Optional[str] = Field(default=os.getenv("JWT_AUDIENCE"))
+    jwt_issuer: Optional[str] = Field(default=os.getenv("JWT_ISSUER"))
     rate_limit_per_minute: int = 60
     dlp_custom_patterns: List[str] = Field(default_factory=list)
     policy_path: str = Field(default=os.getenv("POLICY_PATH", "policies/default.yaml"))
