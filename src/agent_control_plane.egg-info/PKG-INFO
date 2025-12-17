@@ -1,3 +1,37 @@
+Metadata-Version: 2.4
+Name: agent-control-plane
+Version: 0.1.0
+Summary: Runtime control plane for LLM tool use
+Author: OpenAI Agent
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.103.0
+Requires-Dist: uvicorn[standard]>=0.23.0
+Requires-Dist: sqlmodel>=0.0.14
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: psycopg[binary]>=3.1.0
+Requires-Dist: alembic>=1.12.0
+Requires-Dist: pydantic>=2.4.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: structlog>=23.1.0
+Requires-Dist: bcrypt>=4.0.0
+Requires-Dist: orjson>=3.9.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: itsdangerous>=2.1.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: typer>=0.9.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: httpx>=0.25.0; extra == "dev"
+Requires-Dist: black>=23.9.0; extra == "dev"
+Requires-Dist: ruff>=0.0.291; extra == "dev"
+Requires-Dist: mypy>=1.6.0; extra == "dev"
+Requires-Dist: types-PyYAML; extra == "dev"
+Requires-Dist: types-requests; extra == "dev"
+
 # Agent Control Plane
 
 Runtime control plane enforcing policy, RBAC, DLP, and tamper-evident audit for LLM tool use.
