@@ -11,7 +11,7 @@ from jose import jwt
 
 from acp_sdk.client import AgentControlPlaneClient
 
-app = typer.Typer(help="MCP Firewall CLI")
+app = typer.Typer(name="mcp-firewall", help="MCP Firewall CLI")
 
 
 def _resolve_bearer_token(

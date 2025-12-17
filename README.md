@@ -1,6 +1,6 @@
 # MCP Firewall
 
-Security and governance firewall for Model Context Protocol (MCP) tool ecosystems. MCP Firewall enforces RBAC, per-tool policy constraints, approvals, and auditability for any tool connector.
+Security and governance firewall for Model Context Protocol (MCP) tool ecosystems. Today MCP Firewall acts as an MCP-ready **tool firewall**: it front-ends HTTP and internal tools with RBAC, deterministic policy evaluation, constraints, approvals, and auditability. MCP proxying is planned; the current release focuses on hardening policy semantics and developer experience.
 
 ## What is MCP Firewall?
 - **Identity-bound policy decisions**: every request carries principal, tenant, and roles from JWT/OIDC and is evaluated with explicit context.
@@ -42,7 +42,7 @@ Agent SDK -> /v1/tool/execute -> Policy + RBAC + DLP -> (approval?) -> Tool conn
 make run
 
 # terminal 2 (uses CLI with either MCP_FIREWALL_TOKEN or --dev-token)
-python -m acp_cli.main execute --api-key demo-key --tool echo --args '{"message": "hi"}' --dev-token
+mcp-firewall execute --api-key demo-key --tool echo --args '{"message": "hi"}' --dev-token
 ```
 
 ### Example policy snippet
@@ -62,7 +62,7 @@ python -m acp_cli.main execute --api-key demo-key --tool echo --args '{"message"
 ```
 docker compose up --build
 ```
-Brings up Postgres, API (`localhost:8000`), and Adminer (`localhost:8080`).
+Brings up Postgres, API (`localhost:8000`), Adminer (`localhost:8080`), and optional Jaeger UI (`localhost:16686`) for viewing traces when OpenTelemetry exporters are enabled.
 
 ## Policy examples
 See `policies/default.yaml`:

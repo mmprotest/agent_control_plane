@@ -141,6 +141,7 @@ async def execute_tool(
         agent_id=agent.id,
         role=agent_role.name if agent_role else None,
         purpose=request.purpose,
+        user_attributes=auth_context.raw_claims,
     )
 
     def _violation(reason: str, meta: Dict[str, Any]) -> ToolExecutionResponse:
@@ -194,23 +195,29 @@ async def execute_tool(
 
     max_bytes = decision.constraints.get("max_bytes") if decision.constraints else None
     if max_bytes is not None:
-        if _size_bytes(request.args) > int(max_bytes):
+        if _size_bytes(redacted_args) > int(max_bytes):
             return _violation("max_bytes_exceeded", {"subject": "args", "limit": max_bytes})
 
     if decision.constraints.get("max_calls_per_minute"):
         limit = int(decision.constraints["max_calls_per_minute"])
-        rate_key = f"{auth_context.tenant_id}:{request.tool_name}"
+        principal_key = auth_context.principal_id or f"agent-{agent.id}"
+        rate_key = f"{auth_context.tenant_id}:{principal_key}:{request.tool_name}"
         if not rate_limiter.allow(rate_key, limit):
             return _violation("rate_limited", {"limit": limit, "window_seconds": 60})
 
+    def _extract_host(url: str) -> Optional[str]:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        return hostname.lower() if hostname else None
+
     if tool.type == "http":
-        host = urlparse(tool.endpoint or "").hostname
+        host = _extract_host(tool.endpoint or "")
         allowed_domains = decision.constraints.get("allow_domains") or tool.allowed_domains
         denied_domains = decision.constraints.get("deny_domains") or tool.denied_domains
-        if allowed_domains and host not in allowed_domains:
-            return _violation("domain_not_allowed", {"host": host, "allow": allowed_domains})
         if denied_domains and host in denied_domains:
             return _violation("domain_denied", {"host": host, "deny": denied_domains})
+        if allowed_domains and host not in allowed_domains:
+            return _violation("domain_not_allowed", {"host": host, "allow": allowed_domains})
 
     if decision.decision == "deny":
         return _violation("policy_denied", {"policy_rule": decision.matched_rule or "default"})
@@ -277,7 +284,7 @@ async def execute_tool(
     redacted_output, output_redactions = scan_and_redact(output)
     combined_redactions = {**redactions, **output_redactions}
 
-    if max_bytes is not None and _size_bytes(output) > int(max_bytes):
+    if max_bytes is not None and _size_bytes(redacted_output) > int(max_bytes):
         return _violation("max_bytes_exceeded", {"subject": "output", "limit": max_bytes})
 
     trace = Trace(
