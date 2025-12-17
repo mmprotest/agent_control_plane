@@ -2,12 +2,34 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from typing import Callable
 
 from acp_sdk.client import AgentControlPlaneClient
+from jose import jwt
+
+
+def _dev_token_factory() -> str:
+    secret = os.getenv("MCP_FIREWALL_DEV_SECRET", "dev-secret")
+    now = int(asyncio.get_event_loop().time())
+    payload = {
+        "sub": "toy-agent",
+        "tenant": "demo-tenant",
+        "roles": ["operator"],
+        "iat": int(now),
+        "nbf": int(now),
+        "exp": int(now) + 3600,
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
 
 
 async def main() -> None:
-    client = AgentControlPlaneClient("http://localhost:8000", api_key="demo-key")
+    token_provider: Callable[[], str] = _dev_token_factory
+    client = AgentControlPlaneClient(
+        "http://localhost:8000",
+        api_key="demo-key",
+        bearer_token_provider=token_provider,
+    )
 
     allowed = await client.execute_tool("echo", {"message": "hello"}, purpose="greeting")
     print("allowed echo:", json.dumps(allowed, indent=2))
