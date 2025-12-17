@@ -30,5 +30,14 @@ services:
       ADMINER_DEFAULT_SERVER: db
     depends_on:
       - db
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    ports:
+      - "16686:16686"
+      - "14250:14250"
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    depends_on:
+      - api
 volumes:
   db_data:

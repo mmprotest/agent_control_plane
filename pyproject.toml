@@ -42,6 +42,9 @@ dev = [
     "types-requests",
 ]
 
+[project.scripts]
+mcp-firewall = "acp_cli.main:app"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = [
