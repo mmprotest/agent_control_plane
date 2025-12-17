@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import Header, HTTPException, Request
@@ -31,28 +32,70 @@ async def _fetch_jwks(jwks_url: str) -> Dict[str, Any]:
         return response.json()
 
 
+_JWKS_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+def _get_cached_jwks(jwks_url: str, ttl_seconds: int) -> Optional[Dict[str, Any]]:
+    cached = _JWKS_CACHE.get(jwks_url)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if time.time() > expires_at:
+        return None
+    return value
+
+
+def _cache_jwks(jwks_url: str, jwks: Dict[str, Any], ttl_seconds: int) -> None:
+    _JWKS_CACHE[jwks_url] = (time.time() + ttl_seconds, jwks)
+
+
 def _verify_with_jwks(token: str, jwks: Dict[str, Any], audience: Optional[str], issuer: Optional[str]) -> Dict[str, Any]:
     headers = jwt.get_unverified_header(token)
     kid = headers.get("kid")
+    if not kid:
+        raise AuthError("missing_kid")
     keys = jwks.get("keys", [])
     key_data = next((k for k in keys if k.get("kid") == kid), None)
     if not key_data:
         raise AuthError("invalid_kid")
+
     key = jwk.construct(key_data)
-    message, encoded_sig = jwt._load(token)  # type: ignore[attr-defined]
-    if not key.verify(message, encoded_sig):
-        raise AuthError("invalid_signature")
-    claims = jwt.get_unverified_claims(token)
-    if audience and claims.get("aud") != audience:
-        raise AuthError("invalid_audience")
-    if issuer and claims.get("iss") != issuer:
-        raise AuthError("invalid_issuer")
+    public_key = key.to_pem()
+    algorithm = key_data.get("alg") or "RS256"
+
+    try:
+        claims = jwt.decode(
+            token,
+            public_key,
+            algorithms=[algorithm],
+            audience=audience,
+            issuer=issuer,
+            options={
+                "require_exp": True,
+                "require_iat": True,
+                "require_nbf": True,
+            },
+        )
+    except JWTError as exc:  # noqa: BLE001
+        raise AuthError("invalid_token") from exc
+
     return claims
 
 
 def _verify_hs256(token: str, secret: str, audience: Optional[str], issuer: Optional[str]) -> Dict[str, Any]:
     try:
-        return jwt.decode(token, secret, algorithms=["HS256"], audience=audience, issuer=issuer)
+        return jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience=audience,
+            issuer=issuer,
+            options={
+                "require_exp": True,
+                "require_iat": True,
+                "require_nbf": True,
+            },
+        )
     except JWTError as exc:  # noqa: BLE001
         raise AuthError("invalid_token") from exc
 
@@ -68,7 +111,10 @@ async def require_auth(
 
     claims: Dict[str, Any]
     if settings.oidc_jwks_url:
-        jwks = await _fetch_jwks(settings.oidc_jwks_url)
+        cached = _get_cached_jwks(settings.oidc_jwks_url, settings.jwks_cache_ttl_seconds)
+        jwks = cached or await _fetch_jwks(settings.oidc_jwks_url)
+        if not cached:
+            _cache_jwks(settings.oidc_jwks_url, jwks, settings.jwks_cache_ttl_seconds)
         claims = _verify_with_jwks(token, jwks, settings.jwt_audience, settings.jwt_issuer)
     else:
         claims = _verify_hs256(token, settings.jwt_secret, settings.jwt_audience, settings.jwt_issuer)

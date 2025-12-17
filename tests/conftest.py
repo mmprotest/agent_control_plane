@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Iterator
 
 import pytest
@@ -45,8 +46,18 @@ def session() -> Iterator[Session]:
 def client(session: Session) -> TestClient:
     settings = get_settings()
 
-    def _make_token(principal: str = "tester", tenant: str = "tenant-a", roles: list[str] | None = None) -> str:
-        payload = {"sub": principal, "tenant": tenant, "roles": roles or ["operator"]}
+    def _make_token(
+        principal: str = "tester", tenant: str = "tenant-a", roles: list[str] | None = None
+    ) -> str:
+        now = int(time.time())
+        payload = {
+            "sub": principal,
+            "tenant": tenant,
+            "roles": roles or ["operator"],
+            "iat": now,
+            "nbf": now,
+            "exp": now + 3600,
+        }
         return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
     app.extra = {"make_token": _make_token}

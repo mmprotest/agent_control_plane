@@ -16,6 +16,7 @@ class Settings(BaseModel):
     oidc_jwks_url: Optional[str] = Field(default=os.getenv("OIDC_JWKS_URL"))
     jwt_audience: Optional[str] = Field(default=os.getenv("JWT_AUDIENCE"))
     jwt_issuer: Optional[str] = Field(default=os.getenv("JWT_ISSUER"))
+    jwks_cache_ttl_seconds: int = Field(default=int(os.getenv("JWKS_CACHE_TTL", "300")))
     rate_limit_per_minute: int = 60
     dlp_custom_patterns: List[str] = Field(default_factory=list)
     policy_path: str = Field(default=os.getenv("POLICY_PATH", "policies/default.yaml"))
