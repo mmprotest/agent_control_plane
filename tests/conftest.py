@@ -4,10 +4,12 @@ from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from acp_backend.api.main import app, get_db_session
+from acp_backend.core.config import get_settings
 from acp_backend.core.security import hash_secret
 from acp_backend.models.entities import Agent, Role, Tool, User
 
@@ -41,6 +43,14 @@ def session() -> Iterator[Session]:
 
 @pytest.fixture()
 def client(session: Session) -> TestClient:
+    settings = get_settings()
+
+    def _make_token(principal: str = "tester", tenant: str = "tenant-a", roles: list[str] | None = None) -> str:
+        payload = {"sub": principal, "tenant": tenant, "roles": roles or ["operator"]}
+        return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+    app.extra = {"make_token": _make_token}
+
     async def _get_session():
         yield session
 
