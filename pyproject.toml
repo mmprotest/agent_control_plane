@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-control-plane"
+version = "0.1.0"
+description = "Runtime control plane for LLM tool use"
+authors = [{name = "OpenAI Agent"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.103.0",
+    "uvicorn[standard]>=0.23.0",
+    "sqlmodel>=0.0.14",
+    "sqlalchemy>=2.0.0",
+    "psycopg[binary]>=3.1.0",
+    "alembic>=1.12.0",
+    "pydantic>=2.4.0",
+    "httpx>=0.25.0",
+    "pyyaml>=6.0",
+    "structlog>=23.1.0",
+    "bcrypt>=4.0.0",
+    "orjson>=3.9.0",
+    "python-multipart>=0.0.6",
+    "itsdangerous>=2.1.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.25.0",
+    "black>=23.9.0",
+    "ruff>=0.0.291",
+    "mypy>=1.6.0",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = [
+    "acp_backend",
+    "acp_backend.api",
+    "acp_backend.core",
+    "acp_backend.models",
+    "acp_backend.schemas",
+    "acp_backend.services",
+    "acp_backend.tooling",
+    "acp_sdk",
+    "acp_cli",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "B", "UP", "Q"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
+plugins = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

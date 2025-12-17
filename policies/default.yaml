@@ -1,0 +1,12 @@
+rules:
+  - tool: echo
+    decision: allow
+    role: operator
+  - tool: sum_numbers
+    decision: approval_required
+    role: operator
+    constraints:
+      max_cost: 100
+  - tool: secret_fetch
+    decision: deny
+    purpose: exfiltration
