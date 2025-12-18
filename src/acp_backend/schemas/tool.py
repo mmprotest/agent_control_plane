@@ -24,3 +24,4 @@ class ToolExecutionResponse(BaseModel):
     redactions: Optional[Dict[str, Any]] = None
     trace_id: Optional[str] = None
     message: Optional[str] = None
+    explanation: Optional[Dict[str, Any]] = None

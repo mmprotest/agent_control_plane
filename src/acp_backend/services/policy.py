@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import fnmatch
+
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
 from acp_backend.core.config import get_settings
+from acp_backend.schemas.policy import PolicyExplanation
 
 
 _logger = logging.getLogger(__name__)
@@ -23,17 +26,47 @@ class PolicyDecision:
     matched_rule_index: Optional[int] = None
     specificity_score: Tuple[int, ...] | None = None
     matched_selectors: Dict[str, Any] | None = None
+    policy_sha: Optional[str] = None
+    evaluation_timestamp: datetime | None = None
+    triggered_constraints: Dict[str, Any] | None = None
+
+    def to_explanation(
+        self, triggered_constraints: Optional[Dict[str, Any]] | None = None
+    ) -> PolicyExplanation:
+        return PolicyExplanation(
+            decision=self.decision,
+            matched_rule_id=self.matched_rule_id,
+            matched_rule_index=self.matched_rule_index,
+            specificity_score=self.specificity_score[0]
+            if self.specificity_score
+            else 0,
+            matched_selectors=self.matched_selectors or {},
+            triggered_constraints=triggered_constraints
+            if triggered_constraints is not None
+            else self.triggered_constraints
+            or {},
+            evaluation_timestamp=self.evaluation_timestamp or datetime.utcnow(),
+            policy_sha=self.policy_sha,
+        )
+
+    def to_explanation_dict(
+        self, triggered_constraints: Optional[Dict[str, Any]] | None = None
+    ) -> Dict[str, Any]:
+        return self.to_explanation(triggered_constraints).model_dump(mode="json")
 
 
 class PolicyEngine:
     def __init__(self, policy_path: Optional[str] = None):
         self.policy_path = policy_path or get_settings().policy_path
         self.rules: List[Dict[str, Any]] = []
+        self.policy_sha: Optional[str] = None
         self.load()
 
     def load(self) -> None:
         with open(self.policy_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+            raw_content = f.read()
+            self.policy_sha = self._compute_sha(raw_content)
+            data = yaml.safe_load(raw_content) or {}
         raw_rules = data.get("rules", [])
         self.rules = [self._normalize_rule(rule) for rule in raw_rules]
 
@@ -46,57 +79,50 @@ class PolicyEngine:
         purpose: Optional[str],
         user_attributes: Optional[Dict[str, Any]] = None,
     ) -> PolicyDecision:
-        best_rule: Optional[Dict[str, Any]] = None
-        best_match_meta: Optional[Dict[str, Any]] = None
-        best_score: Tuple[int, ...] | None = None
-        best_index: Optional[int] = None
+        matches: List[Tuple[Dict[str, Any], Dict[str, Any], Tuple[int, ...], int]] = []
 
         for idx, rule in enumerate(self.rules):
             match = self._match(rule, tool_name, agent_id, role, purpose, user_attributes)
             if not match:
                 continue
             specificity = match["specificity"]
-            decision = rule.get("decision", "deny")
+            matches.append((rule, match, specificity, idx))
 
-            if best_rule is None:
-                best_rule = rule
-                best_match_meta = match
-                best_score = specificity
-                best_index = idx
-                continue
+        def _sort_key(item: Tuple[Dict[str, Any], Dict[str, Any], Tuple[int, ...], int]):
+            _, _, spec, idx = item
+            return spec, idx
 
-            if best_rule.get("decision") == "deny" and decision != "deny":
-                continue
-            if decision == "deny" and best_rule.get("decision") != "deny":
-                best_rule = rule
-                best_match_meta = match
-                best_score = specificity
-                best_index = idx
-                continue
+        timestamp = datetime.utcnow()
 
-            if specificity > (best_score or (0,)):
-                best_rule = rule
-                best_match_meta = match
-                best_score = specificity
-                best_index = idx
-                continue
-            if specificity == best_score and idx > (best_index or -1):
-                best_rule = rule
-                best_match_meta = match
-                best_score = specificity
-                best_index = idx
-
-        if best_rule and best_match_meta:
-            constraints = self._canonicalize_constraints(best_rule.get("constraints") or {})
+        def _build_decision(item: Tuple[Dict[str, Any], Dict[str, Any], Tuple[int, ...], int]):
+            rule, match_meta, specificity, idx = item
+            constraints = self._canonicalize_constraints(rule.get("constraints") or {})
             return PolicyDecision(
-                decision=str(best_rule.get("decision", "deny")),
+                decision=str(rule.get("decision", "deny")),
                 constraints=constraints,
-                matched_rule=best_rule,
-                matched_rule_id=str(best_rule.get("id")) if best_rule.get("id") else None,
-                matched_rule_index=best_index,
-                specificity_score=best_score,
-                matched_selectors=best_match_meta.get("matched_selectors"),
+                matched_rule=rule,
+                matched_rule_id=str(rule.get("id")) if rule.get("id") else None,
+                matched_rule_index=idx,
+                specificity_score=specificity,
+                matched_selectors=match_meta.get("matched_selectors"),
+                policy_sha=self.policy_sha,
+                evaluation_timestamp=timestamp,
             )
+
+        if matches:
+            denies = [m for m in matches if str(m[0].get("decision", "deny")) == "deny"]
+            approvals = [
+                m
+                for m in matches
+                if str(m[0].get("decision", "deny")) == "approval_required"
+            ]
+            allows = [m for m in matches if str(m[0].get("decision", "deny")) == "allow"]
+
+            for bucket in (denies, approvals, allows):
+                if bucket:
+                    chosen = sorted(bucket, key=_sort_key, reverse=True)[0]
+                    return _build_decision(chosen)
+
         return PolicyDecision(
             decision="deny",
             constraints={},
@@ -105,6 +131,9 @@ class PolicyEngine:
             matched_rule_index=None,
             specificity_score=None,
             matched_selectors=None,
+            policy_sha=self.policy_sha,
+            evaluation_timestamp=timestamp,
+            triggered_constraints={"reason": "no matching rules"},
         )
 
     def _normalize_rule(self, rule: Dict[str, Any]) -> Dict[str, Any]:
@@ -139,6 +168,11 @@ class PolicyEngine:
             return
         _WARNED_ALIASES.add(key)
         _logger.warning("legacy_policy_key: %s -> %s", legacy, new)
+
+    def _compute_sha(self, content: str) -> str:
+        import hashlib
+
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def _match(
         self,

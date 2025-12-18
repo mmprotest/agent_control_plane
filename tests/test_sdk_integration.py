@@ -67,7 +67,9 @@ async def test_sdk_approval_and_replay_use_auth(client) -> None:
             "sum_numbers", {"numbers": [1, 2, 3]}, approval_token=approval_token, purpose="calc"
         )
         assert final["status"] == "SUCCESS"
+        assert final.get("explanation", {}).get("decision") == "allow"
 
         replay = await sdk.replay(final["trace_id"], dry_run=True)
         assert replay["trace_id"] == final["trace_id"]
+        assert replay["dry_run_result"].get("explanation", {}).get("decision")
         await sdk.close()

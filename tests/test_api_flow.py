@@ -15,6 +15,7 @@ def test_execute_denied_on_policy(client: TestClient):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "DENIED"
+    assert body.get("explanation", {}).get("decision") == "deny"
 
 
 def test_execute_requires_approval(client: TestClient):
@@ -27,3 +28,4 @@ def test_execute_requires_approval(client: TestClient):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "PENDING"
+    assert body.get("explanation", {}).get("decision") == "approval_required"

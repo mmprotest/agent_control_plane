@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
@@ -14,14 +15,17 @@ from acp_backend.core.security import verify_secret
 from acp_backend.core.utils import canonical_json, generate_trace_id
 from acp_backend.database import get_session, init_db
 from acp_backend.models.entities import Agent, ApprovalRequest, Role, Tool, Trace, User
+from acp_backend.schemas.mcp import McpRegisterRequest, McpRegisterResponse, McpToolListing
+from acp_backend.schemas.policy import PolicyExplanation
 from acp_backend.schemas.tool import ToolExecutionRequest, ToolExecutionResponse
 from acp_backend.schemas.trace import TraceReplayResponse
 from acp_backend.services import audit
 from acp_backend.services.dlp import scan_and_redact
-from acp_backend.services.policy import PolicyEngine
+from acp_backend.services.policy import PolicyDecision, PolicyEngine
 from acp_backend.services.rate_limit import RateLimiter
 from acp_backend.tooling.http_connector import HttpToolConnector
 from acp_backend.tooling.internal_tools import InternalToolRegistry
+from acp_backend.tooling.mcp_connector import McpHttpConnector
 
 
 settings = get_settings()
@@ -31,6 +35,7 @@ policy_engine = PolicyEngine()
 rate_limiter = RateLimiter()
 internal_tools = InternalToolRegistry()
 http_connector = HttpToolConnector()
+mcp_connector = McpHttpConnector()
 
 
 @app.on_event("startup")
@@ -61,6 +66,66 @@ def authenticate_user(session: Session, token: Optional[str]) -> Optional[User]:
     return None
 
 
+@app.post(
+    f"{settings.api_prefix}/mcp/register", response_model=McpRegisterResponse
+)
+async def register_mcp(
+    payload: McpRegisterRequest,
+    session: Session = Depends(get_db_session),
+    auth_context: AuthContext = Depends(require_auth),
+) -> McpRegisterResponse:
+    discovered = await mcp_connector.discover_tools(payload.base_url)
+    selected = [
+        tool for tool in discovered if not payload.tools or tool.get("name") in payload.tools
+    ]
+    registered: list[str] = []
+    for tool_spec in selected:
+        name = tool_spec.get("name")
+        if not name:
+            continue
+        existing = session.exec(select(Tool).where(Tool.name == name)).first()
+        if existing:
+            existing.type = existing.type or "mcp_http"
+            existing.endpoint = payload.base_url
+        else:
+            session.add(
+                Tool(
+                    name=name,
+                    type="mcp_http",
+                    endpoint=payload.base_url,
+                    requires_approval=False,
+                )
+            )
+        registered.append(name)
+    session.commit()
+    audit.append_audit_log(
+        session,
+        {
+            "action": "mcp_registered",
+            "tenant_id": auth_context.tenant_id,
+            "principal_id": auth_context.principal_id,
+            "agent_id": None,
+            "user_id": None,
+            "tool_name": None,
+            "decision": "allow",
+            "details": {"base_url": payload.base_url, "tools": registered},
+            "trace_id": None,
+        },
+    )
+    return McpRegisterResponse(registered=registered, discovered=discovered)
+
+
+@app.get(f"{settings.api_prefix}/mcp/tools", response_model=McpToolListing)
+async def list_mcp_tools(
+    session: Session = Depends(get_db_session),
+    auth_context: AuthContext = Depends(require_auth),
+) -> McpToolListing:
+    tools = session.exec(select(Tool).where(Tool.type == "mcp_http")).all()
+    return McpToolListing(
+        tools=[{"name": tool.name, "endpoint": tool.endpoint} for tool in tools]
+    )
+
+
 @app.post(f"{settings.api_prefix}/tool/execute", response_model=ToolExecutionResponse)
 async def execute_tool(
     request: ToolExecutionRequest,
@@ -88,6 +153,16 @@ async def execute_tool(
     )
 
     def _deny(reason: str, *, violation: Optional[Dict[str, Any]] = None) -> ToolExecutionResponse:
+        explanation = PolicyExplanation(
+            decision="deny",
+            matched_rule_id=None,
+            matched_rule_index=None,
+            specificity_score=0,
+            matched_selectors={"tool": request.tool_name},
+            triggered_constraints=violation or {"reason": reason},
+            evaluation_timestamp=datetime.utcnow(),
+            policy_sha=policy_engine.policy_sha,
+        ).model_dump(mode="json")
         trace = Trace(
             trace_id=trace_id,
             agent_id=agent.id,
@@ -101,6 +176,7 @@ async def execute_tool(
                 "rule": None,
                 "constraints": {},
                 "violation": violation or {"reason": reason},
+                "explanation": explanation,
             },
             response_payload={"status": "denied", "reason": reason},
             redacted_response={"status": "denied"},
@@ -118,12 +194,20 @@ async def execute_tool(
                 "user_id": user_id,
                 "tool_name": request.tool_name,
                 "decision": "deny",
-                "details": {"reason": reason, "violation": violation},
+                "details": {
+                    "reason": reason,
+                    "violation": violation,
+                    "policy_explanation": explanation,
+                },
                 "trace_id": trace_id,
             },
         )
         return ToolExecutionResponse(
-            status="DENIED", message=reason, redactions=redactions, trace_id=trace_id
+            status="DENIED",
+            message=reason,
+            redactions=redactions,
+            trace_id=trace_id,
+            explanation=explanation,
         )
 
     if not agent_role:
@@ -146,6 +230,7 @@ async def execute_tool(
 
     def _violation(reason: str, meta: Dict[str, Any]) -> ToolExecutionResponse:
         violation = {"reason": reason, **meta}
+        explanation = decision.to_explanation_dict(violation)
         trace = Trace(
             trace_id=trace_id,
             agent_id=agent.id,
@@ -159,6 +244,7 @@ async def execute_tool(
                 "rule": decision.matched_rule,
                 "constraints": decision.constraints,
                 "violation": violation,
+                "explanation": explanation,
             },
             response_payload={"status": "denied", "reason": reason},
             redacted_response={"status": "denied"},
@@ -176,12 +262,20 @@ async def execute_tool(
                 "user_id": user_id,
                 "tool_name": request.tool_name,
                 "decision": "deny",
-                "details": {"policy_rule": decision.matched_rule, "violation": violation},
+                "details": {
+                    "policy_rule": decision.matched_rule,
+                    "violation": violation,
+                    "policy_explanation": explanation,
+                },
                 "trace_id": trace_id,
             },
         )
         return ToolExecutionResponse(
-            status="DENIED", message=reason, redactions=redactions, trace_id=trace_id
+            status="DENIED",
+            message=reason,
+            redactions=redactions,
+            trace_id=trace_id,
+            explanation=explanation,
         )
 
     def _size_bytes(payload: Any) -> int:
@@ -244,6 +338,7 @@ async def execute_tool(
             session.add(approval)
             session.commit()
             session.refresh(approval)
+            explanation = decision.to_explanation_dict({"reason": "approval_required"})
             audit.append_audit_log(
                 session,
                 {
@@ -254,7 +349,10 @@ async def execute_tool(
                     "user_id": user_id,
                     "tool_name": request.tool_name,
                     "decision": "pending",
-                    "details": {"approval_id": approval.approval_id},
+                    "details": {
+                        "approval_id": approval.approval_id,
+                        "policy_explanation": explanation,
+                    },
                     "trace_id": trace_id,
                 },
             )
@@ -265,7 +363,20 @@ async def execute_tool(
                 redactions=redactions,
                 trace_id=trace_id,
                 message="approval_required",
+                explanation=explanation,
             )
+        decision = PolicyDecision(
+            decision="allow",
+            constraints=decision.constraints,
+            matched_rule=decision.matched_rule,
+            matched_rule_id=decision.matched_rule_id,
+            matched_rule_index=decision.matched_rule_index,
+            specificity_score=decision.specificity_score,
+            matched_selectors=decision.matched_selectors,
+            policy_sha=decision.policy_sha,
+            evaluation_timestamp=decision.evaluation_timestamp,
+            triggered_constraints={"approval": "token_present"},
+        )
 
     output: Dict[str, Any] = {}
     execution_details: Dict[str, Any] = {}
@@ -274,6 +385,8 @@ async def execute_tool(
             output = await http_connector.execute(
                 tool.endpoint or "", request.args, tool.allowed_domains, tool.denied_domains
             )
+        elif tool.type == "mcp_http":
+            output = await mcp_connector.execute(tool.endpoint or "", request.tool_name, request.args)
         else:
             output = internal_tools.execute(request.tool_name, request.args)
         execution_details = {"status": "success"}
@@ -287,6 +400,7 @@ async def execute_tool(
     if max_bytes is not None and _size_bytes(redacted_output) > int(max_bytes):
         return _violation("max_bytes_exceeded", {"subject": "output", "limit": max_bytes})
 
+    explanation = decision.to_explanation_dict({})
     trace = Trace(
         trace_id=trace_id,
         agent_id=agent.id,
@@ -301,6 +415,7 @@ async def execute_tool(
             "decision": decision.decision,
             "rule": decision.matched_rule,
             "constraints": decision.constraints,
+            "explanation": explanation,
         },
         execution_details=execution_details,
     )
@@ -317,12 +432,16 @@ async def execute_tool(
             "user_id": user_id,
             "tool_name": request.tool_name,
             "decision": decision.decision,
-            "details": execution_details,
-            "trace_id": trace_id,
-        },
-    )
+                "details": {**execution_details, "policy_explanation": explanation},
+                "trace_id": trace_id,
+            },
+        )
     return ToolExecutionResponse(
-        status="SUCCESS", output=output, redactions=combined_redactions, trace_id=trace_id
+        status="SUCCESS",
+        output=output,
+        redactions=combined_redactions,
+        trace_id=trace_id,
+        explanation=explanation,
     )
 
 
@@ -380,10 +499,12 @@ async def replay_trace(
             role=None,
             purpose=trace.request_payload.get("purpose"),
         )
+        explanation = decision.to_explanation_dict()
         dry_run_result = {
             "decision": decision.decision,
             "rule": decision.matched_rule,
             "constraints": decision.constraints,
+            "explanation": explanation,
         }
     return TraceReplayResponse(
         trace_id=trace.trace_id,
@@ -395,6 +516,16 @@ async def replay_trace(
         execution_details=trace.execution_details,
         dry_run_result=dry_run_result,
     )
+
+
+@app.get(f"{settings.api_prefix}/audit/verify")
+async def verify_audit_chain(
+    session: Session = Depends(get_db_session),
+    auth_context: AuthContext = Depends(require_auth),
+) -> Dict[str, bool]:
+    _ = auth_context
+    valid = audit.verify_audit_log(session)
+    return {"valid": valid}
 
 
 @app.get("/")
