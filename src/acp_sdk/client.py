@@ -60,6 +60,31 @@ class AgentControlPlaneClient:
         response.raise_for_status()
         return response.json()
 
+    async def register_mcp(self, base_url: str, tools: list[str] | None = None) -> Dict[str, Any]:
+        response = await self._client.post(
+            "/v1/mcp/register",
+            json={"base_url": base_url, "tools": tools},
+            headers=self._build_headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def list_mcp_tools(self) -> Dict[str, Any]:
+        response = await self._client.get(
+            "/v1/mcp/tools",
+            headers=self._build_headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def verify_audit(self) -> Dict[str, Any]:
+        response = await self._client.get(
+            "/v1/audit/verify",
+            headers=self._build_headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()

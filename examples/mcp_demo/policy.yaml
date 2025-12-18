@@ -1,0 +1,10 @@
+rules:
+  - tool: echo
+    role: operator
+    decision: allow
+  - tool: blocked
+    role: operator
+    decision: deny
+  - tool: add
+    role: operator
+    decision: approval_required

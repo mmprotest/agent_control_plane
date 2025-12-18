@@ -1,6 +1,6 @@
 # MCP Firewall
 
-Security and governance firewall for Model Context Protocol (MCP) tool ecosystems. Today MCP Firewall acts as an MCP-ready **tool firewall**: it front-ends HTTP and internal tools with RBAC, deterministic policy evaluation, constraints, approvals, and auditability. MCP proxying is planned; the current release focuses on hardening policy semantics and developer experience.
+Security and governance firewall for Model Context Protocol (MCP) tool ecosystems. Today MCP Firewall acts as an MCP-ready **tool firewall**: it front-ends HTTP and internal tools with RBAC, deterministic policy evaluation, constraints, approvals, and auditability. Minimal MCP proxying support is now available for HTTP-based MCP servers alongside hardened policy semantics and developer experience.
 
 ## What is MCP Firewall?
 - **Identity-bound policy decisions**: every request carries principal, tenant, and roles from JWT/OIDC and is evaluated with explicit context.
@@ -44,6 +44,13 @@ make run
 # terminal 2 (uses CLI with either MCP_FIREWALL_TOKEN or --dev-token)
 mcp-firewall execute --api-key demo-key --tool echo --args '{"message": "hi"}' --dev-token
 ```
+
+## MCP Proxy Support (v1)
+- Supports HTTP MCP servers that expose `/mcp/tools` discovery and `/mcp/tools/{name}` execution.
+- Tools discovered via `POST /v1/mcp/register` (CLI: `mcp-firewall mcp register --mcp-url http://...`).
+- Execution flows through the same RBAC, policy, constraints, approval, trace, and audit pipeline.
+- Demo: `python examples/mcp_demo/demo.py` launches an in-memory MCP server, registers tools, executes allowed/denied requests, and verifies the audit chain.
+- Limitations: HTTP transport only; schemas are fetched but not enforced; discovery assumes static tool names.
 
 ### Example policy snippet
 ```yaml

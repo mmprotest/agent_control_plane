@@ -103,3 +103,71 @@ def test_policy_explanation_includes_selectors():
         "role": "operator",
         "purpose": "greeting",
     }
+
+
+def test_deny_overrides_allow_same_specificity():
+    data = {
+        "rules": [
+            {"tool": "echo", "decision": "allow"},
+            {"tool": "echo", "decision": "deny", "id": "deny-late"},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump(data, f)
+        path = f.name
+    engine = PolicyEngine(policy_path=path)
+    decision = engine.evaluate(tool_name="echo", agent_id=None, role=None, purpose=None)
+    assert decision.decision == "deny"
+    assert decision.matched_rule_id == "deny-late"
+    assert decision.matched_rule_index == 1
+
+
+def test_deny_overrides_allow_higher_specificity_allow():
+    data = {
+        "rules": [
+            {"tool": "echo", "role": "operator", "decision": "allow"},
+            {"tool": "*", "decision": "deny", "id": "deny-wildcard"},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump(data, f)
+        path = f.name
+    engine = PolicyEngine(policy_path=path)
+    decision = engine.evaluate(tool_name="echo", agent_id=None, role="operator", purpose=None)
+    assert decision.decision == "deny"
+    assert decision.matched_rule_id == "deny-wildcard"
+
+
+def test_approval_required_beats_allow():
+    data = {
+        "rules": [
+            {"tool": "echo", "decision": "allow"},
+            {"tool": "echo", "decision": "approval_required", "id": "needs-approval"},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump(data, f)
+        path = f.name
+    engine = PolicyEngine(policy_path=path)
+    decision = engine.evaluate(tool_name="echo", agent_id=None, role=None, purpose=None)
+    assert decision.decision == "approval_required"
+    assert decision.matched_rule_id == "needs-approval"
+
+
+def test_top_ranked_deny_chosen_when_multiple_denies_match():
+    data = {
+        "rules": [
+            {"tool": "*", "decision": "deny", "id": "generic-deny"},
+            {"tool": "echo", "decision": "deny", "role": "operator", "id": "specific-deny"},
+            {"tool": "echo", "decision": "deny", "id": "later-deny"},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump(data, f)
+        path = f.name
+    engine = PolicyEngine(policy_path=path)
+    decision = engine.evaluate(tool_name="echo", agent_id=None, role="operator", purpose=None)
+    assert decision.decision == "deny"
+    assert decision.matched_rule_id == "specific-deny"
+    explanation = decision.to_explanation()
+    assert explanation.matched_rule_id == "specific-deny"

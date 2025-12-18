@@ -12,6 +12,8 @@ from jose import jwt
 from acp_sdk.client import AgentControlPlaneClient
 
 app = typer.Typer(name="mcp-firewall", help="MCP Firewall CLI")
+mcp_app = typer.Typer(name="mcp", help="MCP proxy utilities")
+app.add_typer(mcp_app, name="mcp")
 
 
 def _resolve_bearer_token(
@@ -121,6 +123,69 @@ def replay(
             base_url, api_key="cli-replay", bearer_token=resolved_bearer
         )
         result = await client.replay(trace_id, dry_run=dry_run)
+        typer.echo(json.dumps(result, indent=2))
+        await client.close()
+
+    asyncio.run(_run())
+
+
+@mcp_app.command("register")
+def register_mcp(
+    base_url: str = typer.Option("http://localhost:8000"),
+    api_key: str = typer.Option(...),
+    mcp_url: str = typer.Option(..., help="Base URL for MCP server"),
+    tools: Optional[str] = typer.Option(None, help="Comma-separated tool names"),
+    bearer: Optional[str] = typer.Option(default=None, envvar="MCP_FIREWALL_TOKEN"),
+    dev_token: bool = typer.Option(False),
+    dev_secret: Optional[str] = typer.Option(None, envvar="MCP_FIREWALL_DEV_SECRET"),
+):
+    async def _run() -> None:
+        resolved_bearer = _resolve_bearer_token(bearer, dev_token, dev_secret)
+        client = AgentControlPlaneClient(
+            base_url, api_key=api_key, bearer_token=resolved_bearer
+        )
+        tool_list = tools.split(",") if tools else None
+        result = await client.register_mcp(mcp_url, tools=tool_list)
+        typer.echo(json.dumps(result, indent=2))
+        await client.close()
+
+    asyncio.run(_run())
+
+
+@mcp_app.command("list-tools")
+def list_mcp_tools(
+    base_url: str = typer.Option("http://localhost:8000"),
+    api_key: str = typer.Option(...),
+    bearer: Optional[str] = typer.Option(default=None, envvar="MCP_FIREWALL_TOKEN"),
+    dev_token: bool = typer.Option(False),
+    dev_secret: Optional[str] = typer.Option(None, envvar="MCP_FIREWALL_DEV_SECRET"),
+):
+    async def _run() -> None:
+        resolved_bearer = _resolve_bearer_token(bearer, dev_token, dev_secret)
+        client = AgentControlPlaneClient(
+            base_url, api_key=api_key, bearer_token=resolved_bearer
+        )
+        result = await client.list_mcp_tools()
+        typer.echo(json.dumps(result, indent=2))
+        await client.close()
+
+    asyncio.run(_run())
+
+
+@app.command()
+def audit_verify(
+    base_url: str = typer.Option("http://localhost:8000"),
+    api_key: str = typer.Option(...),
+    bearer: Optional[str] = typer.Option(default=None, envvar="MCP_FIREWALL_TOKEN"),
+    dev_token: bool = typer.Option(False),
+    dev_secret: Optional[str] = typer.Option(None, envvar="MCP_FIREWALL_DEV_SECRET"),
+):
+    async def _run() -> None:
+        resolved_bearer = _resolve_bearer_token(bearer, dev_token, dev_secret)
+        client = AgentControlPlaneClient(
+            base_url, api_key=api_key, bearer_token=resolved_bearer
+        )
+        result = await client.verify_audit()
         typer.echo(json.dumps(result, indent=2))
         await client.close()
 
